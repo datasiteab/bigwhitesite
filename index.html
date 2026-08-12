@@ -1147,6 +1147,71 @@
             padding: 4px 8px;
             color: var(--accent-green);
         }
+        .public-lock {
+            font-size: 1rem;
+            padding: 4px 8px;
+        }
+        .public-lock-verified {
+            color: var(--accent-green);
+        }
+        .public-lock-unverified {
+            color: var(--accent-orange);
+        }
+
+        /* ========== 表格分页 ========== */
+        .table-pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 1rem 0.5rem;
+            border-top: 1px solid var(--border-color);
+            flex-wrap: wrap;
+        }
+        .pagi-info {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            margin-right: 0.5rem;
+        }
+        .pagi-btn {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            border-radius: 6px;
+            padding: 0.35rem 0.65rem;
+            font-size: 0.82rem;
+            cursor: pointer;
+            transition: var(--transition);
+            min-width: 2rem;
+        }
+        .pagi-btn:hover:not(:disabled) {
+            background: var(--accent-blue);
+            color: #fff;
+            border-color: var(--accent-blue);
+        }
+        .pagi-btn.active {
+            background: var(--accent-blue);
+            color: #fff;
+            border-color: var(--accent-blue);
+        }
+        .pagi-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+        .pagi-ellipsis {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            padding: 0 0.2rem;
+        }
+        .pagi-select {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            border-radius: 6px;
+            padding: 0.35rem 0.5rem;
+            font-size: 0.82rem;
+            margin-left: 0.5rem;
+        }
 
         /* ========== 模态框（添加/编辑域名） ========== */
         .modal-overlay {
@@ -2021,7 +2086,7 @@ notion.so
         const SCHEMA_VERSION = 1;
         const USAGE_PATCH = 2;   // 业务用途新标准回填版本（非破坏式迁移标记）
         const DATA_PATCH = 1;    // 批量数据源更新版本（强制同步已发布域名的分类/用途/验证状态）
-        const PUBLISH_EPOCH = 1786522038784; // 发布纪元：每次「发布到 GitHub」会自增；同事本地旧缓存纪元不符时自动失效，改用最新源码
+        const PUBLISH_EPOCH = 1786523582405; // 发布纪元：每次「发布到 GitHub」会自增；同事本地旧缓存纪元不符时自动失效，改用最新源码
 
         // 本次需要强制同步到本地存储的 Google 域名清单（避免旧本地数据覆盖新分类/用途/验证状态）
         const GOOGLE_SYNC_DOMAINS = [
@@ -3397,6 +3462,75 @@ notion.so
             return arr;
         }
 
+        // ==================== 表格分页（避免一次性渲染 6000+ 行导致卡顿） ====================
+        let pageSize = 100;
+        let currentPage = 1;
+        function buildPaginationHtml(total, page, pages) {
+            if (pages <= 1) return `<span class="pagi-info">共 ${total} 条</span>`;
+            let nums = '';
+            const start = Math.max(1, page - 2);
+            const end = Math.min(pages, page + 2);
+            for (let i = start; i <= end; i++) {
+                nums += `<button class="pagi-btn ${i === page ? 'active' : ''}" onclick="goPage(${i})">${i}</button>`;
+            }
+            return `
+              <span class="pagi-info">共 ${total} 条，第 ${page}/${pages} 页</span>
+              <button class="pagi-btn" onclick="prevPage()" ${page === 1 ? 'disabled' : ''}>上一页</button>
+              ${page > 3 ? `<button class="pagi-btn" onclick="goPage(1)">1</button><span class="pagi-ellipsis">...</span>` : ''}
+              ${nums}
+              ${page < pages - 2 ? `<span class="pagi-ellipsis">...</span><button class="pagi-btn" onclick="goPage(${pages})">${pages}</button>` : ''}
+              <button class="pagi-btn" onclick="nextPage()" ${page === pages ? 'disabled' : ''}>下一页</button>
+              <select class="pagi-select" onchange="setPageSize(+this.value)">
+                <option value="50" ${pageSize === 50 ? 'selected' : ''}>50条/页</option>
+                <option value="100" ${pageSize === 100 ? 'selected' : ''}>100条/页</option>
+                <option value="200" ${pageSize === 200 ? 'selected' : ''}>200条/页</option>
+                <option value="500" ${pageSize === 500 ? 'selected' : ''}>500条/页</option>
+              </select>`;
+        }
+        function renderCurrentPage() {
+            const tbody = document.getElementById('domain-table-body');
+            const pagi = document.getElementById('table-pagination');
+            if (!tbody) return;
+            const data = window._currentSortedData || [];
+            const total = data.length;
+            const pages = Math.ceil(total / pageSize) || 1;
+            if (currentPage > pages) currentPage = pages;
+            if (currentPage < 1) currentPage = 1;
+            const start = (currentPage - 1) * pageSize;
+            const pageData = data.slice(start, start + pageSize);
+            const idxMap = new Map(domainData.map((d, i) => [d.domain, i]));
+            const idxFor = d => {
+                const i = idxMap.get(d.domain);
+                return i !== undefined ? i : domainData.findIndex(x => x.domain === d.domain);
+            };
+            tbody.innerHTML = pageData.map(d => renderRow(d, idxFor(d))).join('');
+            if (pagi) pagi.innerHTML = buildPaginationHtml(total, currentPage, pages);
+            const sub = document.getElementById('table-subtitle');
+            if (sub) sub.textContent = `共 ${total} 条域名记录`;
+            updateBatchBar();
+        }
+        function goPage(n) {
+            currentPage = n;
+            renderCurrentPage();
+            const wrap = document.querySelector('.table-wrap');
+            if (wrap) wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        function prevPage() { if (currentPage > 1) goPage(currentPage - 1); }
+        function nextPage() {
+            const pages = Math.ceil((window._currentSortedData || []).length / pageSize) || 1;
+            if (currentPage < pages) goPage(currentPage + 1);
+        }
+        function setPageSize(n) {
+            pageSize = n;
+            currentPage = 1;
+            renderCurrentPage();
+        }
+        let filterDebounceTimer;
+        function debouncedFilterTable(q) {
+            clearTimeout(filterDebounceTimer);
+            filterDebounceTimer = setTimeout(() => filterTable(q, true), 250);
+        }
+
         function renderFilteredTable(filteredData, title, initVerified = 'all') {
             const isAll = title.includes('全部域名');
             window._currentFilteredData = filteredData;
@@ -3404,7 +3538,7 @@ notion.so
             content.innerHTML = `
             <div class="page-header">
               <h1>📋 ${title}</h1>
-              <p class="subtitle">共 ${filteredData.length} 条域名记录</p>
+              <p class="subtitle" id="table-subtitle">共 ${filteredData.length} 条域名记录</p>
             </div>
             <div class="table-card">
               <div class="verify-hint">📌 <b>验证说明：</b>将域名标记为「已验证」仅代表已确认其为<b>官方网站且可正常访问</b>，不含任何安全或合规评级；验证后该记录不可再编辑或删除。</div>
@@ -3413,7 +3547,7 @@ notion.so
                 <div class="table-header-right">
                   <div class="search-box">
                     <span style="color:var(--text-muted);">🔍</span>
-                    <input type="text" placeholder="搜索域名..." oninput="filterTable(this.value, true)" id="inline-search">
+                    <input type="text" placeholder="搜索域名..." oninput="debouncedFilterTable(this.value)" id="inline-search">
                   </div>
                   <select id="verified-filter" class="verified-filter" onchange="filterTable(document.getElementById('inline-search').value, true)">
                     <option value="all" ${initVerified==='all'?'selected':''}>全部验证状态</option>
@@ -3447,13 +3581,15 @@ notion.so
                       <th>操作</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    ${applySort(applyFilter(filteredData, '', initVerified)).map(d => renderRow(d)).join('')}
-                  </tbody>
+                  <tbody id="domain-table-body"></tbody>
                 </table>
               </div>
+              <div id="table-pagination" class="table-pagination"></div>
             </div>
           `;
+            window._currentSortedData = applySort(applyFilter(filteredData, '', initVerified));
+            currentPage = 1;
+            renderCurrentPage();
         }
 
         function filterTable(query, useStoredData = false) {
@@ -3461,11 +3597,9 @@ notion.so
             const verifiedFilter = document.getElementById('verified-filter');
             const verifiedValue = verifiedFilter ? verifiedFilter.value : 'all';
             const filtered = applyFilter(data, query, verifiedValue);
-            const tbody = document.querySelector('#domain-table tbody') || document.querySelector(
-                '#domain-table-full tbody');
-            if (tbody) {
-                tbody.innerHTML = applySort(filtered).map(d => renderRow(d)).join('');
-            }
+            window._currentSortedData = applySort(filtered);
+            currentPage = 1;
+            renderCurrentPage();
         }
 
         // ==================== 侧边栏导航 ====================
@@ -3541,15 +3675,18 @@ notion.so
         }
 
         // ==================== 表格行渲染 / 验证 / 导出 ====================
-        function renderRow(d) {
-            const idx = domainData.indexOf(d);
+        function renderRow(d, idx) {
+            const realIdx = idx >= 0 ? idx : domainData.findIndex(x => x.domain === d.domain);
             const verifiedHtml = d.verified
                 ? '<span class="badge-verified">✅ 已验证</span>'
                 : '<span class="badge-unverified">⏳ 未验证</span>';
             const actionsHtml = d.verified
                 ? '<span class="verified-lock" title="已验证，不可编辑/删除">🔒</span>'
-                : `<button class="btn btn-sm btn-verify" onclick="verifyDomain(${idx})">验证</button><button class="btn btn-sm btn-edit" onclick="openModal(${idx})">编辑</button><button class="btn btn-sm btn-del" onclick="deleteDomain(${idx})">删除</button>`;
-            const checkboxHtml = `<input type="checkbox" class="row-checkbox" data-index="${idx}" onchange="updateBatchBar()" ${d.verified ? 'disabled' : ''}>`;
+                : `<button class="btn btn-sm btn-verify" onclick="verifyDomain(${realIdx})">验证</button><button class="btn btn-sm btn-edit" onclick="openModal(${realIdx})">编辑</button><button class="btn btn-sm btn-del" onclick="deleteDomain(${realIdx})">删除</button>`;
+            const checkboxHtml = `<input type="checkbox" class="row-checkbox" data-index="${realIdx}" onchange="updateBatchBar()" ${d.verified ? 'disabled' : ''}>`;
+            const publicLock = d.verified
+                ? '<span class="public-only public-lock public-lock-verified" title="已验证，只读查看">🔒</span>'
+                : '<span class="public-only public-lock public-lock-unverified" title="未验证，只读查看">🔓</span>';
             return `
               <tr>
                 <td class="select-col admin-only">${checkboxHtml}</td>
@@ -3560,7 +3697,7 @@ notion.so
                 <td class="usage-cell">${(d.usage && d.usage.trim()) ? d.usage : autoFillUsage(d)}</td>
                 <td class="time-cell">${d.updateTime || '-'}</td>
                 <td>${verifiedHtml}</td>
-                <td><div class="row-actions admin-only">${actionsHtml}</div><span class="public-only" title="只读查看，无编辑权限">🔓</span></td>
+                <td><div class="row-actions admin-only">${actionsHtml}</div>${publicLock}</td>
               </tr>
             `;
         }
