@@ -2343,8 +2343,9 @@ notion.so
         // 注意：本块必须位于 domainData 数组结尾与其锚定注释「// 为已有数据补充默认」之后，
         // 否则发布替换会吞掉待审数据（buildPublishSource 的 lazy 匹配会错位）。
         let pendingReviewData = [];
-
-        // 【待审数据，仅 sh3 部署保留；发布 GitHub 时自动置空】
+// 【待审数据，仅 sh3 部署保留；发布 GitHub 时自动置空】
+        // 待审月度汇总快照：发布 GitHub 时由 buildPublishSource 用完整 pendingReviewData 自动聚合生成（GitHub 上仪表板待审数字可见，sh3 上以实时 pendingReviewData 为准）
+        let PENDING_STATS_SNAPSHOT = {"2026":{"潘":{"8":640,"9":459}}}; // 【待审月度汇总快照结束】
         // 已在本地「添加」移库的待审域名，防止刷新后被源码回填（对应正式库的 deletedDomains 机制）
         let pendingRemovedDomains = [];
         // 用户在「待审域名」页面手动编辑（分类/用途/优先级）过的域名，刷新后保留本地编辑、不被源码回填覆盖
@@ -5189,7 +5190,7 @@ notion.so
         const PENDING_PATCH = 2; // 待审域名验证状态迁移版本（2026-09-04 新分类全量更新 1185 条，升版一次性以源码为准重置本地标记）（升级时以源码为准重置一次，之后尊重本地手动标记）
         const USAGE_PATCH = 2;   // 业务用途新标准回填版本（非破坏式迁移标记）
         const DATA_PATCH = 1;    // 批量数据源更新版本（强制同步已发布域名的分类/用途/验证状态）
-        const PUBLISH_EPOCH = 1788572641394; // 发布纪元：每次「发布到 GitHub」会自增；同事本地旧缓存纪元不符时自动失效，改用最新源码
+        const PUBLISH_EPOCH = 1788577058538; // 发布纪元：每次「发布到 GitHub」会自增；同事本地旧缓存纪元不符时自动失效，改用最新源码
 
         // 本次需要强制同步到本地存储的 Google 域名清单（避免旧本地数据覆盖新分类/用途/验证状态）
         const GOOGLE_SYNC_DOMAINS = [
@@ -6481,7 +6482,7 @@ notion.so
             });
             const monthTotal = {};
             months.forEach(m => monthTotal[m] = 0);
-            domainData.concat(pendingReviewData).forEach(d => {
+            const addOne = d => {
                 const t = (d.createdAt || d.updateTime || '').toString().slice(0, 7);
                 if (!/^\d{4}-\d{2}$/.test(t)) return;
                 const parts = t.split('-');
@@ -6491,7 +6492,29 @@ notion.so
                 const adder = ADDER_OPTIONS.includes(d['添加人']) ? d['添加人'] : DEFAULT_ADDER;
                 counters[adder][mm] = (counters[adder][mm] || 0) + 1;
                 monthTotal[mm] = (monthTotal[mm] || 0) + 1;
-            });
+            };
+            // 全部域名：实时统计（sh3 与 GitHub 上都一致，domainData 已发布）
+            domainData.forEach(addOne);
+            // 待审域名：sh3 上用实时 pendingReviewData；GitHub 上 pendingReviewData 为空，改读发布时生成的月度快照
+            let snapNote = '';
+            if (pendingReviewData.length) {
+                pendingReviewData.forEach(addOne);
+            } else if (PENDING_STATS_SNAPSHOT && PENDING_STATS_SNAPSHOT[yr]) {
+                const ym = PENDING_STATS_SNAPSHOT[yr];
+                ADDER_OPTIONS.forEach(o => {
+                    const mo = ym[o] || {};
+                    months.forEach(m => {
+                        const c = mo[String(m)] || 0;
+                        if (c) { counters[o][m] += c; monthTotal[m] += c; }
+                    });
+                });
+                // GitHub 上待审是发布那一刻的固定快照（不是实时的），标题里标明截止时间，避免同事误读为实时数据
+                try {
+                    const dt = new Date(PUBLISH_EPOCH);
+                    const p2 = n => String(n).padStart(2, '0');
+                    snapNote = ` · 待审为 ${dt.getFullYear()}-${p2(dt.getMonth() + 1)}-${p2(dt.getDate())} ${p2(dt.getHours())}:${p2(dt.getMinutes())} 发布快照`;
+                } catch (e) { snapNote = ' · 待审为发布快照'; }
+            }
             const headerCells = months.map(m => `<th>${m}月</th>`).join('');
             const rows = ADDER_OPTIONS.map(o => {
                 const cells = months.map(m => `<td>${counters[o][m] || 0}</td>`).join('');
@@ -6503,7 +6526,7 @@ notion.so
             const monthRow = `<tr class="adder-total-row"><td>月度合计</td>${monthSumCells}<td><b>${grandTotal}</b></td></tr>`;
             return `
             <div class="chart-card adder-stats-card" style="margin-top:1.2rem;">
-                <h3>📋 添加人 · 月份统计明细 <span class="muted">（${yr} 年 1-${curMonth} 月 · 全部域名 + 待审域名 · 按首次入库 createdAt 统计）</span></h3>
+                <h3>📋 添加人 · 月份统计明细 <span class="muted">（${yr} 年 1-${curMonth} 月 · 全部域名 + 待审域名 · 按首次入库 createdAt 统计${snapNote}）</span></h3>
                 <table class="adder-stats-table">
                     <thead><tr><th>添加人</th>${headerCells}<th>合计</th></tr></thead>
                     <tbody>${rows}${monthRow}</tbody>
@@ -6632,7 +6655,7 @@ notion.so
               </div>
             </div>
 
-            <!-- 添加人 · 月份统计明细（题目新增列统计，github.io 上正常展示） -->
+            <!-- 添加人 · 月份统计明细（全部域名+待审域名合并；待审在 GitHub 上经 PENDING_STATS_SNAPSHOT 月度快照展示） -->
             ${renderAdderStats()}
           `;
         }
@@ -8076,6 +8099,19 @@ notion.so
             out = replaceLiteral(out, 'let deletedDomains = ', '[', ']', 'const SOURCE_DELETED', jsonSafe(deletedDomains));
             // 待审域名仅内部 sh3 使用，发布 GitHub 时强制置空（不同步给同事）
             out = replaceLiteral(out, 'let pendingReviewData = ', '[', ']', '// 【待审数据，仅 sh3 部署保留；发布 GitHub 时自动置空】', '[]');
+            // 待审月度汇总快照：用发布前内存里完整的 pendingReviewData 按 年/添加人/月 聚合，
+            // 注入到上面的 PENDING_STATS_SNAPSHOT 常量（不被置空），使 GitHub 仪表板也能显示待审月度数字
+            const _pendSnap = {};
+            pendingReviewData.forEach(d => {
+                const t = (d.createdAt || d.updateTime || '').toString().slice(0, 7);
+                const mm = /^(\d{4})-(\d{2})$/.exec(t);
+                if (!mm) return;
+                const yr = mm[1], mo = String(+mm[2]);
+                const adder = ADDER_OPTIONS.includes(d['添加人']) ? d['添加人'] : DEFAULT_ADDER;
+                (_pendSnap[yr] = _pendSnap[yr] || {})[adder] = (_pendSnap[yr][adder] || {});
+                _pendSnap[yr][adder][mo] = (_pendSnap[yr][adder][mo] || 0) + 1;
+            });
+            out = replaceLiteral(out, 'let PENDING_STATS_SNAPSHOT = ', '{', '}', '// 【待审月度汇总快照结束】', jsonSafe(_pendSnap));
             out = out.replace(/const PUBLISH_EPOCH = \d+;/, 'const PUBLISH_EPOCH = ' + Date.now() + ';');
             return out;
         }
