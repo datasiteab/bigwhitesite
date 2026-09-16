@@ -2343,7 +2343,7 @@ notion.so
 let pendingReviewData = [];
 
 // 待审月度汇总快照：发布 GitHub 时由 buildPublishSource 用完整 pendingReviewData 自动聚合生成（GitHub 上仪表板待审数字可见，sh3 上以实时 pendingReviewData 为准）
-        let PENDING_STATS_SNAPSHOT = {"2026":{"潘":{"8":107,"9":6290},"闫":{"9":6519}}}; // 【待审月度汇总快照结束】
+        let PENDING_STATS_SNAPSHOT = {"2026":{"潘":{"8":107,"9":6673},"闫":{"9":6519}}}; // 【待审月度汇总快照结束】
         // 已在本地「添加」移库的待审域名，防止刷新后被源码回填（对应正式库的 deletedDomains 机制）
         let pendingRemovedDomains = [];
         // 用户在「待审域名」页面手动编辑（分类/用途/优先级）过的域名，刷新后保留本地编辑、不被源码回填覆盖
@@ -5188,7 +5188,7 @@ let pendingReviewData = [];
         const PENDING_PATCH = 2; // 待审域名验证状态迁移版本（2026-09-04 新分类全量更新 1185 条，升版一次性以源码为准重置本地标记）（升级时以源码为准重置一次，之后尊重本地手动标记）
         const USAGE_PATCH = 2;   // 业务用途新标准回填版本（非破坏式迁移标记）
         const DATA_PATCH = 1;    // 批量数据源更新版本（强制同步已发布域名的分类/用途/验证状态）
-        const PUBLISH_EPOCH = 1789537785244; // 发布纪元：每次「发布到 GitHub」会自增；同事本地旧缓存纪元不符时自动失效，改用最新源码
+        const PUBLISH_EPOCH = 1789538836820; // 发布纪元：每次「发布到 GitHub」会自增；同事本地旧缓存纪元不符时自动失效，改用最新源码
 
         // 本次需要强制同步到本地存储的 Google 域名清单（避免旧本地数据覆盖新分类/用途/验证状态）
         const GOOGLE_SYNC_DOMAINS = [
